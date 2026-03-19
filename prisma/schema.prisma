@@ -1,0 +1,479 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ==========================================
+// ORGANIZATION & AUTH
+// ==========================================
+
+model Organization {
+  id        String   @id @default(cuid())
+  name      String
+  slug      String   @unique
+  logo      String?
+  settings  Json     @default("{}")
+  plan      Plan     @default(FREE)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  memberships    Membership[]
+  buildings      Building[]
+  specifications ServiceSpecification[]
+  inspections    Inspection[]
+  audits         Audit[]
+  trainings      Training[]
+  runsheets      Runsheet[]
+  handbooks      Handbook[]
+}
+
+enum Plan {
+  FREE
+  STARTER
+  PROFESSIONAL
+  ENTERPRISE
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String?
+  image        String?
+  passwordHash String?
+  locale       String   @default("de")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  memberships         Membership[]
+  inspections         Inspection[]
+  auditResults        AuditResult[]
+  trainingCompletions TrainingCompletion[]
+  accounts            Account[]
+  sessions            Session[]
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+model Membership {
+  id             String    @id @default(cuid())
+  userId         String
+  organizationId String
+  role           Role      @default(CLEANER)
+  invitedAt      DateTime  @default(now())
+  acceptedAt     DateTime?
+
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, organizationId])
+  @@index([organizationId])
+}
+
+enum Role {
+  OWNER
+  ADMIN
+  MANAGER
+  INSPECTOR
+  CLEANER
+}
+
+// ==========================================
+// BUILDING & SPATIAL
+// ==========================================
+
+model Building {
+  id             String   @id @default(cuid())
+  organizationId String
+  name           String
+  address        String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  floors       Floor[]
+
+  @@index([organizationId])
+}
+
+model Floor {
+  id         String @id @default(cuid())
+  buildingId String
+  name       String
+  sortOrder  Int    @default(0)
+
+  building Building @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+  rooms    Room[]
+}
+
+model Room {
+  id         String   @id @default(cuid())
+  floorId    String
+  roomTypeId String
+  name       String
+  code       String
+  area       Float?
+  images     String[]
+  metadata   Json     @default("{}")
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  floor          Floor               @relation(fields: [floorId], references: [id], onDelete: Cascade)
+  roomType       RoomType            @relation(fields: [roomTypeId], references: [id])
+  specifications RoomSpecification[]
+  inspections    Inspection[]
+  runsheetItems  RunsheetItem[]
+}
+
+model RoomType {
+  id             String  @id @default(cuid())
+  organizationId String?
+  name           String
+  icon           String?
+
+  components RoomTypeComponent[]
+  rooms      Room[]
+}
+
+model RoomTypeComponent {
+  id         String @id @default(cuid())
+  roomTypeId String
+  name       String
+  icon       String?
+  weight     Float  @default(1.0)
+  sortOrder  Int    @default(0)
+
+  roomType RoomType @relation(fields: [roomTypeId], references: [id], onDelete: Cascade)
+}
+
+// ==========================================
+// SERVICE SPECIFICATIONS (Leistungsverzeichnisse)
+// ==========================================
+
+model ServiceSpecification {
+  id             String       @id @default(cuid())
+  organizationId String
+  name           String
+  dinStandard    String?
+  cleaningType   CleaningType
+  isTemplate     Boolean      @default(false)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  organization Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  items        SpecificationItem[]
+  roomSpecs    RoomSpecification[]
+
+  @@index([organizationId])
+}
+
+enum CleaningType {
+  MAINTENANCE
+  BASIC
+  GLASS
+  SPECIAL
+  HYGIENE
+  OPERATING_ROOM
+  DISINFECTION
+  FACADE
+  OUTDOOR
+}
+
+model SpecificationItem {
+  id              String    @id @default(cuid())
+  specificationId String
+  componentName   String
+  activity        String
+  frequency       Frequency
+  colorCode       String
+  method          String?
+  product         String?
+  notes           String?
+  sortOrder       Int       @default(0)
+
+  specification ServiceSpecification @relation(fields: [specificationId], references: [id], onDelete: Cascade)
+}
+
+enum Frequency {
+  DAILY
+  TWICE_DAILY
+  THREE_TIMES_DAILY
+  WEEKLY
+  BIWEEKLY
+  MONTHLY
+  QUARTERLY
+  BIANNUALLY
+  ANNUALLY
+  ON_DEMAND
+}
+
+model RoomSpecification {
+  id              String  @id @default(cuid())
+  roomId          String
+  specificationId String
+  weekdays        Int[]
+  timeSlot        String?
+
+  room          Room                 @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  specification ServiceSpecification @relation(fields: [specificationId], references: [id], onDelete: Cascade)
+
+  @@unique([roomId, specificationId])
+}
+
+// ==========================================
+// QUALITY CONTROLS (DIN EN 13549)
+// ==========================================
+
+model Inspection {
+  id             String           @id @default(cuid())
+  organizationId String
+  roomId         String
+  inspectorId    String
+  status         InspectionStatus @default(IN_PROGRESS)
+  overallScore   Float?
+  overallResult  QualityResult?
+  qualityLevel1  Float            @default(85)
+  qualityLevel2  Float            @default(75)
+  comment        String?
+  photos         String[]
+  startedAt      DateTime         @default(now())
+  completedAt    DateTime?
+  syncedAt       DateTime?
+  createdAt      DateTime         @default(now())
+
+  organization Organization          @relation(fields: [organizationId], references: [id])
+  room         Room                  @relation(fields: [roomId], references: [id])
+  inspector    User                  @relation(fields: [inspectorId], references: [id])
+  evaluations  ComponentEvaluation[]
+  repairs      RepairRequest[]
+
+  @@index([organizationId, createdAt])
+  @@index([roomId])
+}
+
+enum InspectionStatus {
+  IN_PROGRESS
+  COMPLETED
+  SYNCED
+}
+
+enum QualityResult {
+  GREEN
+  YELLOW
+  RED
+}
+
+model ComponentEvaluation {
+  id            String        @id @default(cuid())
+  inspectionId  String
+  componentName String
+  score         Float
+  result        QualityResult
+  comment       String?
+  photos        String[]
+
+  inspection Inspection @relation(fields: [inspectionId], references: [id], onDelete: Cascade)
+}
+
+model RepairRequest {
+  id           String       @id @default(cuid())
+  inspectionId String
+  description  String
+  photos       String[]
+  emailSentTo  String[]
+  status       RepairStatus @default(OPEN)
+  createdAt    DateTime     @default(now())
+  resolvedAt   DateTime?
+
+  inspection Inspection @relation(fields: [inspectionId], references: [id])
+}
+
+enum RepairStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+}
+
+// ==========================================
+// AUDITS & SURVEYS
+// ==========================================
+
+model Audit {
+  id             String      @id @default(cuid())
+  organizationId String
+  type           AuditType
+  title          String
+  description    String?
+  templateData   Json
+  status         AuditStatus @default(DRAFT)
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  results      AuditResult[]
+
+  @@index([organizationId])
+}
+
+enum AuditType {
+  PROCESS_AUDIT
+  GENERAL_AUDIT
+  SURVEY
+  COMPETENCY_CHECK
+}
+
+enum AuditStatus {
+  DRAFT
+  ACTIVE
+  CLOSED
+}
+
+model AuditResult {
+  id          String   @id @default(cuid())
+  auditId     String
+  userId      String
+  responses   Json
+  score       Float?
+  completedAt DateTime @default(now())
+
+  audit Audit @relation(fields: [auditId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id])
+}
+
+// ==========================================
+// TRAINING & CERTIFICATION
+// ==========================================
+
+model Training {
+  id             String       @id @default(cuid())
+  organizationId String
+  title          String
+  type           TrainingType
+  content        Json
+  passingScore   Float        @default(80)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  organization Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  completions  TrainingCompletion[]
+}
+
+enum TrainingType {
+  INITIAL
+  SAFETY
+  HYGIENE
+  EQUIPMENT
+  PROCEDURE
+  REFRESHER
+}
+
+model TrainingCompletion {
+  id          String   @id @default(cuid())
+  trainingId  String
+  userId      String
+  score       Float
+  passed      Boolean
+  certificate String?
+  completedAt DateTime @default(now())
+
+  training Training @relation(fields: [trainingId], references: [id], onDelete: Cascade)
+  user     User     @relation(fields: [userId], references: [id])
+}
+
+// ==========================================
+// RUNSHEETS (Laufzettel)
+// ==========================================
+
+model Runsheet {
+  id             String   @id @default(cuid())
+  organizationId String
+  name           String
+  assignedToId   String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  items        RunsheetItem[]
+
+  @@index([organizationId])
+}
+
+model RunsheetItem {
+  id           String    @id @default(cuid())
+  runsheetId   String
+  roomId       String
+  sortOrder    Int       @default(0)
+  timeEstimate Int?
+  instructions String?
+  completed    Boolean   @default(false)
+  completedAt  DateTime?
+
+  runsheet Runsheet @relation(fields: [runsheetId], references: [id], onDelete: Cascade)
+  room     Room     @relation(fields: [roomId], references: [id])
+}
+
+// ==========================================
+// HANDBOOK (Handbuch)
+// ==========================================
+
+model Handbook {
+  id             String   @id @default(cuid())
+  organizationId String
+  title          String
+  locale         String   @default("de")
+  content        Json     @default("{}")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  sections     HandbookSection[]
+
+  @@index([organizationId])
+}
+
+model HandbookSection {
+  id         String @id @default(cuid())
+  handbookId String
+  title      String
+  content    Json
+  icon       String?
+  sortOrder  Int    @default(0)
+
+  handbook Handbook @relation(fields: [handbookId], references: [id], onDelete: Cascade)
+}
